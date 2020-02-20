@@ -1,0 +1,15 @@
+
+*.log
+*.tlog
+*.pdb
+*.idb
+*.obj
+*.sln
+*.exe
+lab_1/.vs/lab_1/v15/.suo
+*.db
+*.ipch
+*.vcxproj
+*.user
+*.ilk
+*.filters
