@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
-#include <sys/time.h>
-const int N = 1000;
+#include <time.h>
+#define N  1000
 double** createMatrix()
 {
 	double** out = (double**)malloc(N * sizeof(double*));
@@ -74,8 +74,6 @@ void printVector(double* vector)
 double* root(double** const A, double* const b)
 {
 	double* cur_root = (double*)calloc(N, sizeof(double));
-	cur_root[0] = 0;
-	cur_root[1] = 0;
 	double t = 0.0001;
 	const double epsilon = 0.00001;
 	while (1)
@@ -92,9 +90,6 @@ double* root(double** const A, double* const b)
 		{
 			double* tdiff = multScal(diff, t);
 			double* new_root = vectorMINUSvector(cur_root, tdiff);
-			//printVector(tdiff);
-			//printVector(new_root);
-			//free(cur_root);
 			cur_root = new_root;
 			free(tdiff);
 			free(mult);
@@ -111,12 +106,8 @@ int main()
 	double* b = createVector();
 	for (int i = 0; i < N; i++)
 		b[i] = i + 1;
-	//printMatrix(A);
-	//printVector(b);
-	time_start();
 	double* x = root(A, b);
-	printf("Time in seconds: %ld\r\n", time_stop());
-	//printVector(x);
+	printVector(x);
 	deleteMatrix(A);
 	free(b);
 	return 0;
