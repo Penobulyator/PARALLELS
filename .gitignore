@@ -13,3 +13,7 @@ lab_1/.vs/lab_1/v15/.suo
 *.user
 *.ilk
 *.filters
+*.lastcodeanalysissucceeded
+*.xml
+*.iobj
+*.ipdb
