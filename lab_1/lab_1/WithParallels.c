@@ -3,51 +3,30 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#define N  6
-#define P 1
+#define N  1000
+#define P 4
 #define M N/P
-double** createMatrix()
-{
-	double** out = (double**)malloc(M * sizeof(double*));
-	for (int i = 0; i < M; i++)
-		out[i] = (double*)calloc(N , sizeof(double));
-	return out;
-}
-double* matrixMULTvectror(double** const matrix, double* const vector)
-{
-	double out[M] = {};// = createVector();
-	for (int i = 0; i < M; i++)
-		for (int j = 0; j < N; j++)
-			out[i] += matrix[i][j] * vector[i];
-	return &(out[0]);
-}
-double* vectorMINUSvector(double* a, double* b)
-{
-	double out[M] = {};// = createVector();
-	for (int i = 0; i < M; i++)
-		out[i] = a[i] - b[i];
-	return &(out[0]);
-}
-double metric(double* vector)
+double A[M][N] = { {} };
+double b[M] = {};
+double x[M] = {};
+double full_root[N] = {};
+double diff[M] = {}; //Ax - b
+const double t = 0.0001;
+const double epsilon = 0.001;
+int rank = 0;
+double metric()
 {
 	double out = 0;
 	for (int i = 0; i < M; i++)
-		out += vector[i] * vector[i];
+		out += diff[i] * diff[i];
 	return sqrt(out);
 }
-double* multScal(double* const vector, double num)
-{
-	double out[M] = {};// = createVector();
-	for (int i = 0; i < M; i++)
-		out[i] = vector[i] * num;
-	return &(out[0]);
-}
-void printMatrix(double** matrix)
+void printMatrix()
 {
 	for (int i = 0; i < M; i++)
 	{
 		for (int j = 0; j < N; j++)
-			printf("%f ", matrix[i][j]);
+			printf("%lf ", A[i][j]);
 		printf("\n");
 	}
 	printf("\n");
@@ -56,101 +35,136 @@ void printVector(double* vector)
 {
 	for (int i = 0; i < M; i++)
 	{
-		printf("%f ", vector[i]);
+		printf("%lf ", vector[i]);
 		printf("\n");
 	}
 	printf("\n");
 }
-double* get_full_root(double* my_root)
+void getFullRoot()
 {
-	int rank = 0;
-	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	//send part of root to other processes
 	for (int i = 0; i < P; i++)
 		if (i != rank)
-			MPI_Send(my_root, M, MPI_DOUBLE, i, 123, MPI_COMM_WORLD);
+			MPI_Send(x, M, MPI_DOUBLE, i, 123, MPI_COMM_WORLD);
 	//receive missing parts from other processes of root and build a full root
-	double output[N] = {};// = (double*)calloc(N, sizeof(double));
 	double buf[M] = {};// = createVector();
 	for (int i = 0; i < P; i++)
 	{
 		if (i == rank)
 		{
 			for (int j = 0; j < M; j++)
-				output[rank*M + j] = my_root[j];
+				full_root[i*M + j] = x[j];
 		}
 		else
 		{
 			MPI_Recv(buf, M, MPI_DOUBLE, i, 123, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 			for (int j = 0; j < M; j++)
-				output[i*M + j] = buf[j];
+				full_root[i*M + j] = buf[j];
 		}
 	}
 	//free(buf);
-	return &(output[0]);
 }
-
-double* root(double** const A, double* const b)
+void countDiff()
 {
-	int rank;
-	MPI_Comm_rank(MPI_COMM_WORLD, &rank); // Получение номера процесса
-	double my_root[M] = {};// = createVector();
-	double t = 0.0001;
-	const double epsilon = 0.001;
-	for (int i = 0; i < 100; i++)
+	for (int i = 0; i < M; i++)
 	{
-		//count current difference between Ax and b
-		double* full_root = get_full_root(my_root);
+		diff[i] = 0;
+		for (int j = 0; j < N; j++)
+			diff[i] += A[i][j] * full_root[j];
+	}
+	for (int i = 0; i < M; i++)
+		diff[i] -= b[i];
+}
+void refreshRoot()
+{
+	for (int i = 0; i < M; i++)
+		x[i] = x[i] - t * diff[i];
+}
+void countRoot()
+{
+	while(1)
+	{
+		/*if (rank == 0)
+		{
+			printf("x:\n");
+			printVector(x);
+		}
 		if (rank == 0)
 		{
-			for (int j = 0; j < N; i++)
-				printf("%d\n", full_root[j]);
-			printf('\n');
-		}
-		double* mult = matrixMULTvectror(A, full_root);
-		double* diff = vectorMINUSvector(mult, b);
-		double my_metric = metric(diff) / metric(b);
+			printf("Full root:\n");
+			for (int j = 0; j < N; j++)
+				printf("%2f\n", full_root[j]);
+			printf("\n");
+		}*/
+		//count current difference between Ax and b
+		getFullRoot();
+		/*if (rank == 0)
+		{
+			printf("Fool root:\n");
+			for (int j = 0; j < N; j++)
+				printf("%2f\n", full_root[j]);
+			printf("\n");
+		}*/
+		countDiff();
+		/*if (rank == 0)
+		{
+			printf("Ax - b:\n");
+			printVector(diff);
+		}*/
+		double my_metric = metric();
 		double reduced_metric = 0;
 		MPI_Allreduce(&my_metric, &reduced_metric, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+		//printf("%2f\n", reduced_metric);
 		if (reduced_metric < epsilon)
 		{
-			return my_root;
+			return;
 		}
 		else
 		{
-			double* tdiff = multScal(diff, t);
-			double* new_root = vectorMINUSvector(my_root, tdiff);
-			my_root = new_root;
+			refreshRoot();
+			/*if (rank == 0)
+			{
+				for (int j = 0; j < N; j++)
+					printf("%2f\n", x[j]);
+				printf("\n");
+			}*/
 		}
 	}
-
+	return;
 }
 int main(int argc, char *argv[])
 {
 	MPI_Init(&argc, &argv);
 	{
-		int rank;
 		MPI_Comm_rank(MPI_COMM_WORLD, &rank); // Получение номера процесса
 		//init part of matrix
-		double **my_matrix = createMatrix();
 		for (int i = 0; i < M; i++)
-			my_matrix[i][rank*M + i] = rank + i + 1;
-		//init part of b vector
-		double b[M];// = createVector();
+			A[i][rank*M + i] = 1;
+		//init part of b vector and x
 		for (int i = 0; i < M; i++)
-			b[i] = rank * M + i + 1;
+		{
+			b[i] = 1;
+			x[i] = 0;
+		}
+		for (int i = 0; i < N; i++)
+		{
+			full_root[i] = 0;
+		}
 		//get part of root
-		if (rank == 0)
+		/*if (rank == 0)
 		{
 			printf("Srarting root...\n");
-		}
-		double* x = root(my_matrix, b);
+			printf("My matrix:\n");
+			printMatrix();
+			printf("My b:\n");
+			printVector(b);
+		}*/
+		countRoot();
 		if (rank == 0)
 		{
+			printf("Root has finished\n");
 			printVector(x);
 		}
-		free(b);
-		free(x);
 	}
 	MPI_Finalize(); // Завершение работы MPI
 	return 0;
