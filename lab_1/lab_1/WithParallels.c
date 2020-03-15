@@ -3,25 +3,31 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#define N  1000
-#define P 4
-#define M N/P
-double A[M][N] = { {} };
-double b[M] = {};
-double x[M] = {};
-double full_root[N] = {};
-double diff[M] = {}; //Ax - b
-const double t = 0.0001;
-const double epsilon = 0.001;
-int rank = 0;
-double metric()
+int size = 0;    //count of processes
+int rank = 0;    //number of process
+#define N  100   //matrix size
+#define M N/size //number of rows for process
+double** createMatrix()
+{
+	double** out = (double**)malloc(M * sizeof(double*));
+	for (int i = 0; i < M; i++)
+		out[i] = (double*)calloc(N, sizeof(double));
+	return out;
+}
+void deleteMatrix(double** matrix)
+{
+	for (int i = 0; i < M; i++)
+		free(matrix[i]);
+	free(matrix);
+}
+double metric(double *const vector)
 {
 	double out = 0;
 	for (int i = 0; i < M; i++)
-		out += diff[i] * diff[i];
+		out += vector[i] * vector[i];
 	return sqrt(out);
 }
-void printMatrix()
+void printMatrix(double *const *const A)
 {
 	for (int i = 0; i < M; i++)
 	{
@@ -31,7 +37,7 @@ void printMatrix()
 	}
 	printf("\n");
 }
-void printVector(double* vector)
+void printVector(double *const vector)
 {
 	for (int i = 0; i < M; i++)
 	{
@@ -40,15 +46,15 @@ void printVector(double* vector)
 	}
 	printf("\n");
 }
-void getFullRoot()
+void getFullRoot(double* full_root, double *const x)
 {
 	//send part of root to other processes
-	for (int i = 0; i < P; i++)
+	for (int i = 0; i < size; i++)
 		if (i != rank)
 			MPI_Send(x, M, MPI_DOUBLE, i, 123, MPI_COMM_WORLD);
 	//receive missing parts from other processes of root and build a full root
-	double buf[M] = {};// = createVector();
-	for (int i = 0; i < P; i++)
+	double* buf = (double*)calloc(M, sizeof(double));
+	for (int i = 0; i < size; i++)
 	{
 		if (i == rank)
 		{
@@ -62,110 +68,86 @@ void getFullRoot()
 				full_root[i*M + j] = buf[j];
 		}
 	}
-	//free(buf);
+	free(buf);
 }
-void countDiff()
+void countDiff(double* diff, double *const *const A, double *const b, double *const x, double *const full_root)
 {
+	//count Ax
 	for (int i = 0; i < M; i++)
 	{
 		diff[i] = 0;
 		for (int j = 0; j < N; j++)
 			diff[i] += A[i][j] * full_root[j];
 	}
+	//count Ax - b
 	for (int i = 0; i < M; i++)
 		diff[i] -= b[i];
 }
-void refreshRoot()
+void refreshRoot(double* root, double *const diff, const double t)
 {
+	//root = root - t * (Ax - b) = root - t * diff
 	for (int i = 0; i < M; i++)
-		x[i] = x[i] - t * diff[i];
+		root[i] = root[i] - t * diff[i];
 }
-void countRoot()
+double* countRoot(double *const *const A, double *const b)
 {
+	double* x = (double*)calloc(M, sizeof(double));
+	double* full_root = (double*)calloc(N, sizeof(double));
+	double* diff = (double*)calloc(M, sizeof(double));
+	const double t = 0.0001;
+	const double epsilon = 0.001;
 	while(1)
 	{
-		/*if (rank == 0)
-		{
-			printf("x:\n");
-			printVector(x);
-		}
-		if (rank == 0)
-		{
-			printf("Full root:\n");
-			for (int j = 0; j < N; j++)
-				printf("%2f\n", full_root[j]);
-			printf("\n");
-		}*/
-		//count current difference between Ax and b
-		getFullRoot();
-		/*if (rank == 0)
-		{
-			printf("Fool root:\n");
-			for (int j = 0; j < N; j++)
-				printf("%2f\n", full_root[j]);
-			printf("\n");
-		}*/
-		countDiff();
-		/*if (rank == 0)
-		{
-			printf("Ax - b:\n");
-			printVector(diff);
-		}*/
-		double my_metric = metric();
+		//get part of root from other processes
+		getFullRoot(full_root, x);
+		//count Ax - b
+		countDiff(diff, A, b, x, full_root);
+		//count metric and exit if root is good
+		double my_metric = metric(diff);
 		double reduced_metric = 0;
 		MPI_Allreduce(&my_metric, &reduced_metric, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
-		//printf("%2f\n", reduced_metric);
 		if (reduced_metric < epsilon)
 		{
-			return;
+			//if root is good
+			free(diff);
+			free(full_root);
+			return x;
 		}
 		else
 		{
-			refreshRoot();
-			/*if (rank == 0)
-			{
-				for (int j = 0; j < N; j++)
-					printf("%2f\n", x[j]);
-				printf("\n");
-			}*/
+			//if root is bad
+			refreshRoot(x, diff, t);
 		}
 	}
-	return;
 }
 int main(int argc, char *argv[])
 {
-	MPI_Init(&argc, &argv);
+	MPI_Init(&argc, &argv);//start work of MPI
 	{
-		MPI_Comm_rank(MPI_COMM_WORLD, &rank); // Получение номера процесса
+		MPI_Comm_rank(MPI_COMM_WORLD, &rank); // get nuber of process
+		MPI_Comm_size(MPI_COMM_WORLD, &size); // get count if processes
 		//init part of matrix
+		double** const A = createMatrix();
 		for (int i = 0; i < M; i++)
 			A[i][rank*M + i] = 1;
-		//init part of b vector and x
+		//init part of b vector
+		double* b = (double*)calloc(M, sizeof(double));
 		for (int i = 0; i < M; i++)
 		{
 			b[i] = 1;
-			x[i] = 0;
-		}
-		for (int i = 0; i < N; i++)
-		{
-			full_root[i] = 0;
 		}
 		//get part of root
-		/*if (rank == 0)
-		{
-			printf("Srarting root...\n");
-			printf("My matrix:\n");
-			printMatrix();
-			printf("My b:\n");
-			printVector(b);
-		}*/
-		countRoot();
+		double* root = countRoot(A, b);
+		//print root and clear memory
 		if (rank == 0)
 		{
 			printf("Root has finished\n");
-			printVector(x);
+			printVector(root);
 		}
+		deleteMatrix(A);
+		free(b);
+		free(root);
 	}
-	MPI_Finalize(); // Завершение работы MPI
+	MPI_Finalize(); // end work of MPI
 	return 0;
 }
