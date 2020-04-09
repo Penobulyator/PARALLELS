@@ -6,7 +6,7 @@
 int size = 0;    //count of processes
 int rank = 0;    //number of process
 #define N  100   //matrix size
-#define M N/size //number of rows for process
+#define M N/size //number of rows for one process
 double** createMatrix()
 {
 	double** out = (double**)malloc(M * sizeof(double*));
@@ -52,7 +52,7 @@ void getFullRoot(double* full_root, double *const x)
 	for (int i = 0; i < size; i++)
 		if (i != rank)
 			MPI_Send(x, M, MPI_DOUBLE, i, 123, MPI_COMM_WORLD);
-	//receive missing parts from other processes of root and build a full root
+	//receive missing parts of root from other processes and build a full root
 	double* buf = (double*)calloc(M, sizeof(double));
 	for (int i = 0; i < size; i++)
 	{
@@ -85,7 +85,7 @@ void countDiff(double* diff, double *const *const A, double *const b, double *co
 }
 void refreshRoot(double* root, double *const diff, const double t)
 {
-	//root = root - t * (Ax - b) = root - t * diff
+	//root = root - t * diff
 	for (int i = 0; i < M; i++)
 		root[i] = root[i] - t * diff[i];
 }
@@ -98,7 +98,7 @@ double* countRoot(double *const *const A, double *const b)
 	const double epsilon = 0.001;
 	while(1)
 	{
-		//get part of root from other processes
+		//get parts of root from other processes
 		getFullRoot(full_root, x);
 		//count Ax - b
 		countDiff(diff, A, b, x, full_root);
@@ -125,7 +125,7 @@ int main(int argc, char *argv[])
 	MPI_Init(&argc, &argv);//start work of MPI
 	{
 		MPI_Comm_rank(MPI_COMM_WORLD, &rank); // get nuber of process
-		MPI_Comm_size(MPI_COMM_WORLD, &size); // get count if processes
+		MPI_Comm_size(MPI_COMM_WORLD, &size); // get count of processes
 		//init part of matrix
 		double** const A = createMatrix();
 		for (int i = 0; i < M; i++)
