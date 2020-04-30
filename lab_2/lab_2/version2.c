@@ -48,7 +48,7 @@ double metric(double* vector)
 	#pragma omp parallel
 	{
 		int i;
-		#pragma omp for private(i)
+		#pragma omp for private(i), reduction(+: out)
 		for (i = 0; i < N; i++)
 			out += vector[i] * vector[i];
 	}
@@ -60,6 +60,7 @@ void countDiff(double* diff, double *const *const A, double *const b, double *co
 	//count Ax
 	#pragma omp parallel
 	{
+		
 		int i;
 		#pragma omp for private(i)
 		for (i = 0; i < N; i++)

@@ -45,31 +45,34 @@ void printVector(double* vector)
 double metric(double* vector)
 {
 	double out = 0;
-#pragma omp parallel for reduction(+: out)
-	for (int i = 0; i < N; i++)
+	int i;
+#pragma omp parallel for private(i), reduction(+: out)
+	for (i = 0; i < N; i++)
 		out += vector[i] * vector[i];
 	return sqrt(out);
 }
 void countDiff(double* diff, double *const *const A, double *const b, double *const x)
 {
 	//count Ax
-#pragma omp parallel for
-	for (int i = 0; i < N; i++)
+	int i;
+#pragma omp parallel for private(i)
+	for ( i = 0; i < N; i++)
 	{
 		diff[i] = 0;
 		for (int j = 0; j < N; j++)
 			diff[i] += A[i][j] * x[j];
 	}
 	//count Ax - b
-#pragma omp parallel for
-	for (int i = 0; i < N; i++)
+#pragma omp parallel for private(i)
+	for (i = 0; i < N; i++)
 		diff[i] -= b[i];
 }
 void refreshRoot(double* root, double *const diff, const double t)
 {
 	//root = root - t * diff
-#pragma omp parallel for
-	for (int i = 0; i < N; i++)
+	int i;
+#pragma omp parallel for private(i)
+	for (i = 0; i < N; i++)
 		root[i] = root[i] - t * diff[i];
 }
 double* root(double** const A, double* const b)
