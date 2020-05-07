@@ -1,9 +1,10 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <sys/time.h>
 
-#define N1 8
-#define N2 4
-#define N3 4
+#define N1 4096
+#define N2 2048	
+#define N3 1024
 
 int rank = 0;
 int size = 0;
@@ -67,12 +68,21 @@ int main()
 			B[i][j] = i * j + i + j + 1;
 
 
-	printMatrix(A, N1, N2);
-	printMatrix(B, N2, N3);
+	//printMatrix(A, N1, N2);
+	//printMatrix(B, N2, N3);
+
+	struct timeval tv1, tv2;
+	gettimeofday(&tv1, NULL);
 
 	mult(C, A, B);
+	gettimeofday(&tv2, NULL);
 
-	printMatrix(C, N1, N3);
+	double dt_sec = (tv2.tv_sec - tv1.tv_sec);
+	double dt_usec = (tv2.tv_usec - tv1.tv_usec);
+	double dt = dt_sec + 1e-6*dt_usec;
+	printf("time diff: %e \n", dt);
+
+	//printMatrix(C, N1, N3);
 
 	deleteMatrix(A, N1);
 	deleteMatrix(B, N2);

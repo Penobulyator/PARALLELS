@@ -1,11 +1,12 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <sys/time.h>
 
 #include <mpi.h>
 
-#define N1 8
-#define N2 4
-#define N3 4
+#define N1 1024
+#define N2 1024
+#define N3 1024
 
 int rank = 0;
 int size = 0;
@@ -76,11 +77,12 @@ void sendChunks(double **A, double**B)
 	//B is matrix of size N2*N3
 
 	//send parts of matrix A
+	int aBlockSize = N1 / p1;
 	for (int lineNumber = 0; lineNumber < N1; lineNumber++)
 	{
-
-		MPI_Send(A[lineNumber], N2, MPI_DOUBLE, lineNumber / p2 + 1, A_STATUS, MPI_COMM_WORLD);
-		/*printf("Sending this to process number %d: ", lineNumber / p2 + 1);
+		//printf("Sending A to %d\n", lineNumber / p2 + 1);
+		MPI_Send(A[lineNumber], N2, MPI_DOUBLE, lineNumber / aBlockSize + 1, A_STATUS, MPI_COMM_WORLD);
+		/*printf("Sending this to process number %d: ", lineNumber / aBlockSize + 1);
 		for (int i = 0; i < N2; i++)
 			printf("%2f ", A[lineNumber][i]);
 		printf("\n");*/
@@ -90,8 +92,8 @@ void sendChunks(double **A, double**B)
 	{
 		for (int lineNumber = 0; lineNumber < N2; lineNumber++)
 		{
-				MPI_Send(&B[lineNumber][(N3 / p2) * columnNumber], N3 / p2, MPI_DOUBLE, 1 + columnNumber*p1, B_STATUS, MPI_COMM_WORLD);
-			/*printf("Sending this to process number %d: ", p1*columnNumber + 1);
+			MPI_Send(&B[lineNumber][(N3 / p2) * columnNumber], N3 / p2, MPI_DOUBLE, columnNumber*p1 + 1, B_STATUS, MPI_COMM_WORLD);
+			/*printf("Sending this to process number %d: ", columnNumber*p1 + 1);
 			for (int i = 0; i < N3/p2; i++)
 				printf("%2f ", B[lineNumber][(N3 / p2) * columnNumber + i]);
 			printf("\n");*/
@@ -108,8 +110,17 @@ void receiveChunks(double **C)
 	{
 		for (int lineNumber = 0; lineNumber < N1 / p1; lineNumber++)
 		{
-			MPI_Recv(&C[((processNumber - 1) % p1)*p2 +lineNumber][(N3 / p2)*((processNumber - 1) / p1)], N3 / p2, MPI_DOUBLE, processNumber, C_STATUS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+			MPI_Recv(&C[((processNumber - 1) % p1)*(N1/p1) +lineNumber][(N3 / p2)*((processNumber - 1) / p1)], N3 / p2, MPI_DOUBLE, processNumber, C_STATUS, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 		}
+
+		/*printf("I received this from process number %d\n", processNumber);
+		for (int i = 0; i < N1 / p1; i++)
+		{
+			for (int j = 0; j < N3 / p2; j++)
+				printf("%2f ", C[((processNumber - 1) % p1)*p1  + i][(N3 / p2)*((processNumber - 1) / p1) + j]);
+			printf("\n");
+		}*/
+		
 	}
 
 }
@@ -137,6 +148,7 @@ void receiveOneChunk(double **A, double **B)
 	//B is matrix of size N2*(N3/p2)
 
 	//receive part of A matrix (from left)
+	//printf("Process number %d receiving A\n", rank);
 	int providerProcess = 0;
 	if (rank - p1 >= 0)
 	{
@@ -171,8 +183,8 @@ void receiveOneChunk(double **A, double **B)
 		{
 			MPI_Send(B[i], N3 / p2, MPI_DOUBLE, rank + 1, B_STATUS, MPI_COMM_WORLD);
 		}
-		//printf("Process number %d received B from process number %d and sended B to process number %d\n", rank, providerProcess, rank + 1);
 	}
+	//printf("Process number %d received B from process number %d and sended B to process number %d\n", rank, providerProcess, rank + 1);
 }
 void sendOneChunk(double** C)
 {
@@ -182,6 +194,28 @@ void sendOneChunk(double** C)
 		MPI_Send(C[i], N3 / p2, MPI_DOUBLE, 0, C_STATUS, MPI_COMM_WORLD);
 	}
 
+}
+
+
+
+
+
+void bigMult(double** C, double **A, double **B)
+{
+	{
+		//A is matrix of size N1*N2
+		//B is matrix of size N2*N3
+		//C is matrix of size N1*N3 (C = A*B)
+		for (int i = 0; i < N1; ++i)
+		{
+			for (int j = 0; j < N3; ++j)
+			{
+				C[i][j] = 0;
+				for (int k = 0; k < N2; ++k)
+					C[i][j] += A[i][k] * B[k][j];
+			}
+		}
+	}
 }
 /*MAIN*/
 int main(int argc, char** argv)
@@ -210,22 +244,25 @@ int main(int argc, char** argv)
 					B[i][j] = i * j + i + j + 1;
 			printf("p1 = %d, p2 = %d\n", p1, p2);
 
-			printf("A:\n");
-			printMatrix(A, N1, N2);
+			//printf("A:\n");
+			//printMatrix(A, N1, N2);
 
-			printf("B:\n");
-			printMatrix(B, N2, N3);
+			//printf("B:\n");
+			//printMatrix(B, N2, N3);
 
 			setProcessesNumber();
 
-			
+			struct timeval tv1, tv2;
+			gettimeofday(&tv1, NULL);
 			sendChunks(A, B);
 
 			receiveChunks(C);
+			gettimeofday(&tv2, NULL);
 
-
-			printf("C:\n");
-			printMatrix(C, N1, N3);
+			double dt_sec = (tv2.tv_sec - tv1.tv_sec);
+			double dt_usec = (tv2.tv_usec - tv1.tv_usec);
+			double dt = dt_sec + 1e-6*dt_usec;
+			printf("time diff: %e \n", dt);
 
 			deleteMatrix(A, N1);
 			deleteMatrix(B, N2);
